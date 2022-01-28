@@ -1,45 +1,168 @@
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::io;
+use std::io::{BufReader, BufWriter};
+use std::path::PathBuf;
+use std::str::FromStr;
 
+use csv::{ReaderBuilder, WriterBuilder};
 use serde::{Deserialize, Serialize};
+use structopt::StructOpt;
+use strum::{EnumString, EnumVariantNames, VariantNames};
+use thiserror::Error;
 
-fn main() {
-    let stdin = io::stdin();
-    let data = serde_json::from_reader(stdin.lock()).unwrap();
+fn main() -> Result<()> {
+    match CLI::from_args().run() {
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+        _ => Ok(()),
+    }
+}
 
-    let mut set = NestedSet::new(data);
-    let set = set.rebuild();
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    RuntimeError(String),
 
-    let stdout = io::stdout();
-    serde_json::to_writer_pretty(io::BufWriter::new(stdout.lock()), &set.nodes).unwrap();
+    #[error("Parent node not found: {0}")]
+    ParentNodeNotFoundError(String),
+
+    #[error("Root node not found. Remove `\"parent\"` from root node or set it to `null`")]
+    RootNodeNotFoundError(),
+
+    #[error(transparent)]
+    StdIoError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    CsvError(#[from] csv::Error),
+}
+
+type Result<T, E = Error> = core::result::Result<T, E>;
+
+#[derive(Debug, Clone, EnumString, EnumVariantNames)]
+#[strum(serialize_all = "snake_case")]
+enum InputFormat {
+    CSV,
+    TSV,
+    JSON,
+}
+
+#[derive(Debug, StructOpt)]
+struct CLI {
+    /// Input format
+    #[structopt(short, long, possible_values = InputFormat::VARIANTS)]
+    format: Option<InputFormat>,
+
+    /// Output to a file (default: stdout)
+    #[structopt(short, long, parse(from_os_str))]
+    output: Option<PathBuf>,
+
+    /// File to process (default: stdin)
+    #[structopt(parse(from_os_str))]
+    input: Option<PathBuf>,
+}
+
+impl CLI {
+    pub fn run(&self) -> Result<()> {
+        let format = match self.format.as_ref() {
+            Some(v) => v.clone(),
+            None => match self.format_from_input().as_ref() {
+                Some(v) => v.clone(),
+                None => Err(Error::RuntimeError(format!("missing option --format")))?,
+            },
+        };
+
+        let stdin = io::stdin();
+        let input: Box<dyn io::Read> = match self.input.as_ref() {
+            Some(path) => {
+                let f = File::open(path)?;
+                Box::new(f)
+            }
+            None => Box::new(stdin.lock()),
+        };
+
+        let data = match format {
+            InputFormat::JSON => serde_json::from_reader(BufReader::new(input))?,
+            _ => {
+                let mut builder = ReaderBuilder::new();
+                if let InputFormat::TSV = format {
+                    builder.delimiter(b'\t');
+                }
+
+                let mut reader = builder.from_reader(BufReader::new(input));
+                reader
+                    .deserialize()
+                    .filter_map(|x| x.ok())
+                    .collect::<Vec<Node>>()
+            }
+        };
+
+        let mut set = NestedSet::new(data)?;
+        let set = set.rebuild()?;
+
+        let stdout = io::stdout();
+        let output: Box<dyn io::Write> = match self.output.as_ref() {
+            Some(path) => {
+                let f = File::create(path)?;
+                Box::new(f)
+            }
+            None => Box::new(stdout.lock()),
+        };
+
+        match format {
+            InputFormat::JSON => serde_json::to_writer_pretty(BufWriter::new(output), &set.nodes)?,
+            _ => {
+                let mut builder = WriterBuilder::new();
+                if let InputFormat::TSV = format {
+                    builder.delimiter(b'\t');
+                }
+
+                let mut writer = builder.from_writer(BufWriter::new(output));
+                for record in &set.nodes {
+                    writer.serialize(record)?;
+                }
+            }
+        };
+
+        Ok(())
+    }
+
+    fn format_from_input(&self) -> Option<InputFormat> {
+        if let Some(input) = self.input.as_ref() {
+            if let Some(ext) = input.extension() {
+                if let Some(str) = ext.to_str() {
+                    return InputFormat::from_str(str).ok();
+                }
+            }
+        }
+
+        None
+    }
+}
+
+fn default_if_empty<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(de).map(|x| x.unwrap_or_else(|| T::default()))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Node {
     id: String,
     label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     parent: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "default_if_empty")]
     leaf: bool,
     lft: Option<usize>,
     rgt: Option<usize>,
     count: Option<usize>,
-}
-
-impl Node {
-    #[allow(dead_code)]
-    pub fn new(id: String, label: String, parent: Option<String>, leaf: bool) -> Self {
-        Self {
-            id,
-            label,
-            parent,
-            leaf,
-            lft: None,
-            rgt: None,
-            count: None,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -51,7 +174,7 @@ struct NestedSet {
 }
 
 impl NestedSet {
-    pub fn new(nodes: Vec<Node>) -> Self {
+    pub fn new(nodes: Vec<Node>) -> Result<Self> {
         let mut root = None;
         let mut lookup = BTreeMap::<String, usize>::new();
 
@@ -67,8 +190,10 @@ impl NestedSet {
 
         let mut children: Vec<Option<Vec<usize>>> = vec![None; nodes.len()];
         for (i, x) in nodes.iter().enumerate() {
-            let parent = match x.parent {
-                Some(ref p) => *lookup.get(p).unwrap(),
+            let parent = match x.parent.as_ref() {
+                Some(p) => *lookup
+                    .get(p)
+                    .ok_or(Error::ParentNodeNotFoundError(p.to_owned()))?,
                 None => continue,
             };
 
@@ -78,17 +203,17 @@ impl NestedSet {
             }
         }
 
-        Self {
+        Ok(Self {
             nodes,
             lookup,
             root,
             children,
-        }
+        })
     }
 
-    pub fn rebuild(&mut self) -> &Self {
+    pub fn rebuild(&mut self) -> Result<&Self> {
         if self.root.is_none() {
-            panic!("root node not found. remove `\"parent\"` of root object or set to `null`")
+            Err(Error::RootNodeNotFoundError())?
         }
 
         fn fill(set: &mut NestedSet, i: usize, n: usize) -> usize {
@@ -127,7 +252,7 @@ impl NestedSet {
 
         fill(self, self.root.unwrap(), 1);
 
-        self
+        Ok(self)
     }
 }
 
@@ -153,71 +278,109 @@ mod tests {
     #[test]
     fn test() {
         let data = vec![
-            Node::new("Clothing".to_owned(), "Clothing".to_owned(), None, false),
-            Node::new(
-                "Men's".to_owned(),
-                "Men's".to_owned(),
-                Some("Clothing".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Women's".to_owned(),
-                "Women's".to_owned(),
-                Some("Clothing".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Suits".to_owned(),
-                "Suits".to_owned(),
-                Some("Men's".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Slacks".to_owned(),
-                "Slacks".to_owned(),
-                Some("Suits".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Jackets".to_owned(),
-                "Jackets".to_owned(),
-                Some("Suits".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Dresses".to_owned(),
-                "Dresses".to_owned(),
-                Some("Women's".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Skirts".to_owned(),
-                "Skirts".to_owned(),
-                Some("Women's".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Blouses".to_owned(),
-                "Blouses".to_owned(),
-                Some("Women's".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Evening Gowns".to_owned(),
-                "Evening Gowns".to_owned(),
-                Some("Dresses".to_owned()),
-                false,
-            ),
-            Node::new(
-                "Sun Dresses".to_owned(),
-                "Sun Dresses".to_owned(),
-                Some("Dresses".to_owned()),
-                false,
-            ),
+            Node {
+                id: "Clothing".to_owned(),
+                label: "Clothing".to_owned(),
+                parent: None,
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Men's".to_owned(),
+                label: "Men's".to_owned(),
+                parent: Some("Clothing".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Women's".to_owned(),
+                label: "Women's".to_owned(),
+                parent: Some("Clothing".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Suits".to_owned(),
+                label: "Suits".to_owned(),
+                parent: Some("Men's".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Slacks".to_owned(),
+                label: "Slacks".to_owned(),
+                parent: Some("Suits".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Jackets".to_owned(),
+                label: "Jackets".to_owned(),
+                parent: Some("Suits".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Dresses".to_owned(),
+                label: "Dresses".to_owned(),
+                parent: Some("Women's".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Skirts".to_owned(),
+                label: "Skirts".to_owned(),
+                parent: Some("Women's".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Blouses".to_owned(),
+                label: "Blouses".to_owned(),
+                parent: Some("Women's".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Evening Gowns".to_owned(),
+                label: "Evening Gowns".to_owned(),
+                parent: Some("Dresses".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
+            Node {
+                id: "Sun Dresses".to_owned(),
+                label: "Sun Dresses".to_owned(),
+                parent: Some("Dresses".to_owned()),
+                leaf: false,
+                lft: None,
+                rgt: None,
+                count: None,
+            },
         ];
 
-        let mut set = NestedSet::new(data);
-        let set = set.rebuild();
+        let mut set = NestedSet::new(data).unwrap();
+        let set = set.rebuild().unwrap();
 
         assert_eq!(set.nodes.get(0).unwrap().lft, Some(1));
         assert_eq!(set.nodes.get(0).unwrap().rgt, Some(22));

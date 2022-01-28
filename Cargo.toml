@@ -6,5 +6,9 @@ description = "A command-line tool for assigning left/right indices of nested se
 license = "MIT"
 
 [dependencies]
+csv = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+structopt = "0.3"
+strum = { version = "0.23", features = ["derive"] }
+thiserror = "1.0"
