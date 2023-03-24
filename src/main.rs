@@ -33,7 +33,7 @@ pub enum Error {
     RootNodeNotFoundError(),
 
     #[error(transparent)]
-    StdIoError(#[from] std::io::Error),
+    StdIoError(#[from] io::Error),
 
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
@@ -153,8 +153,7 @@ impl CLI {
     }
 }
 
-fn default_if_empty<'de, D, T>(de: D) -> Result<T, D::Error>
-where
+fn default_if_empty<'de, D, T>(de: D) -> Result<T, D::Error> where
     D: serde::Deserializer<'de>,
     T: serde::Deserialize<'de> + Default,
 {
@@ -163,9 +162,14 @@ where
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Node {
-    id: String,
-    label: String,
-    parent: Option<String>,
+    pid: Option<usize>,
+    #[serde(rename(serialize = "classification", deserialize = "id"))]
+    node: String,
+    #[serde(rename(serialize = "classification_label", deserialize = "label"))]
+    node_label: String,
+    #[serde(rename(serialize = "classification_parent", deserialize = "parent"))]
+    parent_node: Option<String>,
+    parent_id: Option<usize>,
     #[serde(default, deserialize_with = "default_if_empty")]
     leaf: bool,
     lft: Option<usize>,
@@ -176,34 +180,37 @@ struct Node {
 #[derive(Debug)]
 struct NestedSet {
     nodes: Vec<Node>,
-    lookup: BTreeMap<String, usize>,
     root: Option<usize>,
     children: Vec<Option<Vec<usize>>>,
 }
 
 impl NestedSet {
-    pub fn new(nodes: Vec<Node>) -> Result<Self> {
+    pub fn new(mut nodes: Vec<Node>) -> Result<Self> {
         let mut root = None;
         let mut lookup = BTreeMap::<String, usize>::new();
 
-        for (i, x) in nodes.iter().enumerate() {
+        for (i, x) in nodes.iter_mut().enumerate() {
+            x.pid = Some(i + 1);
+
             if x.leaf {
                 continue;
             }
-            if x.parent.is_none() {
+            if x.parent_node.is_none() {
                 root = Some(i);
             }
-            lookup.insert(x.id.to_owned(), i);
+            lookup.insert(x.node.to_owned(), i);
         }
 
         let mut children: Vec<Option<Vec<usize>>> = vec![None; nodes.len()];
-        for (i, x) in nodes.iter().enumerate() {
-            let parent = match x.parent.as_ref() {
+        for (i, x) in nodes.iter_mut().enumerate() {
+            let parent = match x.parent_node.as_ref() {
                 Some(p) => *lookup
                     .get(p)
                     .ok_or(Error::ParentNodeNotFoundError(p.to_owned()))?,
                 None => continue,
             };
+
+            x.parent_id = Some(parent + 1);
 
             match children.get_mut(parent).unwrap() {
                 Some(x) => x.push(i),
@@ -213,7 +220,6 @@ impl NestedSet {
 
         Ok(Self {
             nodes,
-            lookup,
             root,
             children,
         })
@@ -270,116 +276,138 @@ mod tests {
 
     /// Example from https://en.wikipedia.org/wiki/Nested_set_model
     ///
-    /// | Node          | Lft | Rgt |
-    /// |---------------|-----|-----|
-    /// | Clothing      |   1 |  22 |
-    /// | Men's         |   2 |   9 |
-    /// | Women's       |  10 |  21 |
-    /// | Suits         |   3 |   8 |
-    /// | Slacks        |   4 |   5 |
-    /// | Jackets       |   6 |   7 |
-    /// | Dresses       |  11 |  16 |
-    /// | Skirts        |  17 |  18 |
-    /// | Blouses       |  19 |  20 |
-    /// | Evening Gowns |  12 |  13 |
-    /// | Sun Dresses   |  14 |  15 |
+    /// | id | parent_id | Node          | Lft | Rgt |
+    /// |----|-----------|---------------|-----|-----|
+    /// |  1 |           | Clothing      |   1 |  22 |
+    /// |  2 |         1 | Men's         |   2 |   9 |
+    /// |  3 |         1 | Women's       |  10 |  21 |
+    /// |  4 |         2 | Suits         |   3 |   8 |
+    /// |  5 |         4 | Slacks        |   4 |   5 |
+    /// |  6 |         4 | Jackets       |   6 |   7 |
+    /// |  7 |         3 | Dresses       |  11 |  16 |
+    /// |  8 |         3 | Skirts        |  17 |  18 |
+    /// |  9 |         3 | Blouses       |  19 |  20 |
+    /// | 10 |         7 | Evening Gowns |  12 |  13 |
+    /// | 11 |         7 | Sun Dresses   |  14 |  15 |
     #[test]
     fn test() {
         let data = vec![
             Node {
-                id: "Clothing".to_owned(),
-                label: "Clothing".to_owned(),
-                parent: None,
+                pid: None,
+                node: "Clothing".to_owned(),
+                node_label: "Clothing".to_owned(),
+                parent_node: None,
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Men's".to_owned(),
-                label: "Men's".to_owned(),
-                parent: Some("Clothing".to_owned()),
+                pid: None,
+                node: "Men's".to_owned(),
+                node_label: "Men's".to_owned(),
+                parent_node: Some("Clothing".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Women's".to_owned(),
-                label: "Women's".to_owned(),
-                parent: Some("Clothing".to_owned()),
+                pid: None,
+                node: "Women's".to_owned(),
+                node_label: "Women's".to_owned(),
+                parent_node: Some("Clothing".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Suits".to_owned(),
-                label: "Suits".to_owned(),
-                parent: Some("Men's".to_owned()),
+                pid: None,
+                node: "Suits".to_owned(),
+                node_label: "Suits".to_owned(),
+                parent_node: Some("Men's".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Slacks".to_owned(),
-                label: "Slacks".to_owned(),
-                parent: Some("Suits".to_owned()),
+                pid: None,
+                node: "Slacks".to_owned(),
+                node_label: "Slacks".to_owned(),
+                parent_node: Some("Suits".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Jackets".to_owned(),
-                label: "Jackets".to_owned(),
-                parent: Some("Suits".to_owned()),
+                pid: None,
+                node: "Jackets".to_owned(),
+                node_label: "Jackets".to_owned(),
+                parent_node: Some("Suits".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Dresses".to_owned(),
-                label: "Dresses".to_owned(),
-                parent: Some("Women's".to_owned()),
+                pid: None,
+                node: "Dresses".to_owned(),
+                node_label: "Dresses".to_owned(),
+                parent_node: Some("Women's".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Skirts".to_owned(),
-                label: "Skirts".to_owned(),
-                parent: Some("Women's".to_owned()),
+                pid: None,
+                node: "Skirts".to_owned(),
+                node_label: "Skirts".to_owned(),
+                parent_node: Some("Women's".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Blouses".to_owned(),
-                label: "Blouses".to_owned(),
-                parent: Some("Women's".to_owned()),
+                pid: None,
+                node: "Blouses".to_owned(),
+                node_label: "Blouses".to_owned(),
+                parent_node: Some("Women's".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Evening Gowns".to_owned(),
-                label: "Evening Gowns".to_owned(),
-                parent: Some("Dresses".to_owned()),
+                pid: None,
+                node: "Evening Gowns".to_owned(),
+                node_label: "Evening Gowns".to_owned(),
+                parent_node: Some("Dresses".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
-                id: "Sun Dresses".to_owned(),
-                label: "Sun Dresses".to_owned(),
-                parent: Some("Dresses".to_owned()),
+                pid: None,
+                node: "Sun Dresses".to_owned(),
+                node_label: "Sun Dresses".to_owned(),
+                parent_node: Some("Dresses".to_owned()),
+                parent_id: None,
                 leaf: false,
                 lft: None,
                 rgt: None,
@@ -390,26 +418,58 @@ mod tests {
         let mut set = NestedSet::new(data).unwrap();
         let set = set.rebuild().unwrap();
 
+        assert_eq!(set.nodes.get(0).unwrap().pid, Some(1));
+        assert_eq!(set.nodes.get(0).unwrap().parent_id, None);
         assert_eq!(set.nodes.get(0).unwrap().lft, Some(1));
         assert_eq!(set.nodes.get(0).unwrap().rgt, Some(22));
+
+        assert_eq!(set.nodes.get(1).unwrap().pid, Some(2));
+        assert_eq!(set.nodes.get(1).unwrap().parent_id, Some(1));
         assert_eq!(set.nodes.get(1).unwrap().lft, Some(2));
         assert_eq!(set.nodes.get(1).unwrap().rgt, Some(9));
+
+        assert_eq!(set.nodes.get(2).unwrap().pid, Some(3));
+        assert_eq!(set.nodes.get(2).unwrap().parent_id, Some(1));
         assert_eq!(set.nodes.get(2).unwrap().lft, Some(10));
         assert_eq!(set.nodes.get(2).unwrap().rgt, Some(21));
+
+        assert_eq!(set.nodes.get(3).unwrap().pid, Some(4));
+        assert_eq!(set.nodes.get(3).unwrap().parent_id, Some(2));
         assert_eq!(set.nodes.get(3).unwrap().lft, Some(3));
         assert_eq!(set.nodes.get(3).unwrap().rgt, Some(8));
+
+        assert_eq!(set.nodes.get(4).unwrap().pid, Some(5));
+        assert_eq!(set.nodes.get(4).unwrap().parent_id, Some(4));
         assert_eq!(set.nodes.get(4).unwrap().lft, Some(4));
         assert_eq!(set.nodes.get(4).unwrap().rgt, Some(5));
+
+        assert_eq!(set.nodes.get(5).unwrap().pid, Some(6));
+        assert_eq!(set.nodes.get(5).unwrap().parent_id, Some(4));
         assert_eq!(set.nodes.get(5).unwrap().lft, Some(6));
         assert_eq!(set.nodes.get(5).unwrap().rgt, Some(7));
+
+        assert_eq!(set.nodes.get(6).unwrap().pid, Some(7));
+        assert_eq!(set.nodes.get(6).unwrap().parent_id, Some(3));
         assert_eq!(set.nodes.get(6).unwrap().lft, Some(11));
         assert_eq!(set.nodes.get(6).unwrap().rgt, Some(16));
+
+        assert_eq!(set.nodes.get(7).unwrap().pid, Some(8));
+        assert_eq!(set.nodes.get(7).unwrap().parent_id, Some(3));
         assert_eq!(set.nodes.get(7).unwrap().lft, Some(17));
         assert_eq!(set.nodes.get(7).unwrap().rgt, Some(18));
+
+        assert_eq!(set.nodes.get(8).unwrap().pid, Some(9));
+        assert_eq!(set.nodes.get(8).unwrap().parent_id, Some(3));
         assert_eq!(set.nodes.get(8).unwrap().lft, Some(19));
         assert_eq!(set.nodes.get(8).unwrap().rgt, Some(20));
+
+        assert_eq!(set.nodes.get(9).unwrap().pid, Some(10));
+        assert_eq!(set.nodes.get(9).unwrap().parent_id, Some(7));
         assert_eq!(set.nodes.get(9).unwrap().lft, Some(12));
         assert_eq!(set.nodes.get(9).unwrap().rgt, Some(13));
+
+        assert_eq!(set.nodes.get(10).unwrap().pid, Some(11));
+        assert_eq!(set.nodes.get(10).unwrap().parent_id, Some(7));
         assert_eq!(set.nodes.get(10).unwrap().lft, Some(14));
         assert_eq!(set.nodes.get(10).unwrap().rgt, Some(15));
     }
