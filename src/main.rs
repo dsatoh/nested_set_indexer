@@ -46,7 +46,7 @@ type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug, Clone, EnumString, EnumVariantNames)]
 #[strum(serialize_all = "snake_case")]
-enum InputFormat {
+enum Format {
     CSV,
     TSV,
     JSON,
@@ -55,8 +55,12 @@ enum InputFormat {
 #[derive(Debug, StructOpt)]
 struct CLI {
     /// Input format
-    #[structopt(short, long, possible_values = InputFormat::VARIANTS)]
-    format: Option<InputFormat>,
+    #[structopt(short, long, possible_values = Format::VARIANTS)]
+    from: Option<Format>,
+
+    /// Output format
+    #[structopt(short, long, possible_values = Format::VARIANTS)]
+    to: Option<Format>,
 
     /// Output to a file (default: stdout)
     #[structopt(short, long, parse(from_os_str))]
@@ -69,12 +73,16 @@ struct CLI {
 
 impl CLI {
     pub fn run(&self) -> Result<()> {
-        let format = match self.format.as_ref() {
+        let from = match self.from.as_ref() {
             Some(v) => v.clone(),
             None => match self.format_from_input().as_ref() {
                 Some(v) => v.clone(),
-                None => Err(Error::RuntimeError(format!("missing option --format")))?,
+                None => Err(Error::RuntimeError(format!("missing option --from")))?,
             },
+        };
+        let to = match self.to.as_ref() {
+            Some(v) => v.clone(),
+            None => from.clone(),
         };
 
         let stdin = io::stdin();
@@ -86,11 +94,11 @@ impl CLI {
             None => Box::new(stdin.lock()),
         };
 
-        let data = match format {
-            InputFormat::JSON => serde_json::from_reader(BufReader::new(input))?,
+        let data = match from {
+            Format::JSON => serde_json::from_reader(BufReader::new(input))?,
             _ => {
                 let mut builder = ReaderBuilder::new();
-                if let InputFormat::TSV = format {
+                if let Format::TSV = from {
                     builder.delimiter(b'\t');
                 }
 
@@ -114,11 +122,11 @@ impl CLI {
             None => Box::new(stdout.lock()),
         };
 
-        match format {
-            InputFormat::JSON => serde_json::to_writer_pretty(BufWriter::new(output), &set.nodes)?,
+        match to {
+            Format::JSON => serde_json::to_writer_pretty(BufWriter::new(output), &set.nodes)?,
             _ => {
                 let mut builder = WriterBuilder::new();
-                if let InputFormat::TSV = format {
+                if let Format::TSV = to {
                     builder.delimiter(b'\t');
                 }
 
@@ -132,11 +140,11 @@ impl CLI {
         Ok(())
     }
 
-    fn format_from_input(&self) -> Option<InputFormat> {
+    fn format_from_input(&self) -> Option<Format> {
         if let Some(input) = self.input.as_ref() {
             if let Some(ext) = input.extension() {
                 if let Some(str) = ext.to_str() {
-                    return InputFormat::from_str(str).ok();
+                    return Format::from_str(str).ok();
                 }
             }
         }

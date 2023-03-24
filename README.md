@@ -13,3 +13,19 @@ A command-line tool for assigning left/right indices of nested set
   ```shell
   $ nested_set_indexer < input.json > output.json 
   ```
+
+  ```
+  nested_set_indexer [OPTIONS] [input]
+
+  FLAGS:
+      -h, --help       Prints help information
+      -V, --version    Prints version information
+
+  OPTIONS:
+      -f, --from <from>        Input format [possible values: csv, tsv, json]
+      -o, --output <output>    Output to a file (default: stdout)
+      -t, --to <to>            Output format [possible values: csv, tsv, json]
+
+  ARGS:
+      <input>    File to process (default: stdin)
+  ```

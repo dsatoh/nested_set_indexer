@@ -1,6 +1,6 @@
 [package]
 name = "nested_set_indexer"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 description = "A command-line tool for assigning left/right indices of nested set"
 license = "MIT"
