@@ -9,9 +9,11 @@ use csv::{ReaderBuilder, WriterBuilder};
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 use strum::{EnumString, EnumVariantNames, VariantNames};
-use thiserror::Error;
+use error::Error;
 
-fn main() -> Result<()> {
+mod error;
+
+fn main() -> error::Result<()> {
     match CLI::from_args().run() {
         Err(err) => {
             eprintln!("{}", err);
@@ -20,29 +22,6 @@ fn main() -> Result<()> {
         _ => Ok(()),
     }
 }
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    RuntimeError(String),
-
-    #[error("Parent node not found: {0}")]
-    ParentNodeNotFoundError(String),
-
-    #[error("Root node not found. Remove `\"parent\"` from root node or set it to `null`")]
-    RootNodeNotFoundError(),
-
-    #[error(transparent)]
-    StdIoError(#[from] io::Error),
-
-    #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
-
-    #[error(transparent)]
-    CsvError(#[from] csv::Error),
-}
-
-type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug, Clone, EnumString, EnumVariantNames)]
 #[strum(serialize_all = "snake_case")]
@@ -72,7 +51,7 @@ struct CLI {
 }
 
 impl CLI {
-    pub fn run(&self) -> Result<()> {
+    pub fn run(&self) -> error::Result<()> {
         let from = match self.from.as_ref() {
             Some(v) => v.clone(),
             None => match self.format_from_input().as_ref() {
@@ -153,7 +132,7 @@ impl CLI {
     }
 }
 
-fn default_if_empty<'de, D, T>(de: D) -> Result<T, D::Error> where
+fn default_if_empty<'de, D, T>(de: D) -> error::Result<T, D::Error> where
     D: serde::Deserializer<'de>,
     T: serde::Deserialize<'de> + Default,
 {
@@ -185,7 +164,7 @@ struct NestedSet {
 }
 
 impl NestedSet {
-    pub fn new(mut nodes: Vec<Node>) -> Result<Self> {
+    pub fn new(mut nodes: Vec<Node>) -> error::Result<Self> {
         let mut root = None;
         let mut lookup = BTreeMap::<String, usize>::new();
 
@@ -225,7 +204,7 @@ impl NestedSet {
         })
     }
 
-    pub fn rebuild(&mut self) -> Result<&Self> {
+    pub fn rebuild(&mut self) -> error::Result<&Self> {
         if self.root.is_none() {
             Err(Error::RootNodeNotFoundError())?
         }
