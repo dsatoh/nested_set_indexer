@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::io;
+use thiserror::Error;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error("Root node not found. Remove `\"parent\"` from root node or set it to `null`")]
     RootNodeNotFoundError(),
+
+    #[error("Multiple nodes with `\"parent\"` is null were found.")]
+    MultipleRootNodeError(),
 
     #[error(transparent)]
     StdIoError(#[from] io::Error),

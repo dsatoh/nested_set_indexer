@@ -13,6 +13,10 @@ pub enum Format {
 
 #[derive(Debug, StructOpt)]
 pub struct Options {
+    /// Complement leaf nodes
+    #[structopt(long)]
+    pub complement_leaf: bool,
+
     /// Input format
     #[structopt(short, long, possible_values = Format::VARIANTS)]
     pub from: Option<Format>,

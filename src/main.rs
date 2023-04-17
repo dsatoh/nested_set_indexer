@@ -1,7 +1,8 @@
 use crate::cli::Format;
+use crate::data::Graph;
 use cli::Options;
 use csv::{ReaderBuilder, WriterBuilder};
-use data::{NestedSet, Node};
+use data::Node;
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, BufWriter};
@@ -14,20 +15,20 @@ mod error;
 fn main() -> error::Result<()> {
     let options = Options::from_args();
 
-    let from = match options.from.as_ref() {
+    let from = match &options.from {
         Some(v) => v.clone(),
-        None => match options.format_from_input().as_ref() {
+        None => match &options.format_from_input() {
             Some(v) => v.clone(),
             None => Err(error::Error::RuntimeError(format!("missing option --from")))?,
         },
     };
-    let to = match options.to.as_ref() {
+    let to = match &options.to {
         Some(v) => v.clone(),
         None => from.clone(),
     };
 
     let stdin = io::stdin();
-    let input: Box<dyn io::Read> = match options.input.as_ref() {
+    let input: Box<dyn io::Read> = match &options.input {
         Some(path) => {
             let f = File::open(path)?;
             Box::new(f)
@@ -51,11 +52,18 @@ fn main() -> error::Result<()> {
         }
     };
 
-    let mut set = NestedSet::new(data)?;
-    let set = set.rebuild()?;
+    let mut graph = Graph::new(data)?;
+    if graph.is_dag() {
+        graph = graph.dag_to_tree()?;
+    }
+    if options.complement_leaf {
+        graph = graph.complement_leaf()?;
+    }
+
+    let graph = graph.build_index()?;
 
     let stdout = io::stdout();
-    let output: Box<dyn io::Write> = match options.output.as_ref() {
+    let output: Box<dyn io::Write> = match &options.output {
         Some(path) => {
             let f = File::create(path)?;
             Box::new(f)
@@ -64,7 +72,7 @@ fn main() -> error::Result<()> {
     };
 
     match to {
-        Format::JSON => serde_json::to_writer_pretty(BufWriter::new(output), &set.nodes)?,
+        Format::JSON => serde_json::to_writer_pretty(BufWriter::new(output), &graph.nodes)?,
         _ => {
             let mut builder = WriterBuilder::new();
             if let Format::TSV = to {
@@ -72,7 +80,7 @@ fn main() -> error::Result<()> {
             }
 
             let mut writer = builder.from_writer(BufWriter::new(output));
-            for record in &set.nodes {
+            for record in &graph.nodes {
                 writer.serialize(record)?;
             }
         }
