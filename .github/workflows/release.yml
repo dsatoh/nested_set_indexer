@@ -8,15 +8,19 @@ jobs:
     strategy:
       matrix:
         target:
-          - aarch64-unknown-linux-gnu
           - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
 
         include:
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -26,16 +30,20 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          override: true
+          profile: minimal
+
+      - name: Add Rust Targets
+        run: |
+          rustup target add ${{ matrix.target }}
 
       - uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --target=${{ matrix.target }}
-          use-cross: true
 
       - run: |
           zip --junk-paths nested_set_indexer-${{ matrix.target }} target/${{ matrix.target }}/release/nested_set_indexer
+
       - uses: actions/upload-artifact@v1
         with:
           name: build-${{ matrix.target }}
@@ -66,8 +74,9 @@ jobs:
     strategy:
       matrix:
         target:
-          - aarch64-unknown-linux-gnu
           - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
 
     needs: [create-release]
     runs-on: ubuntu-latest
