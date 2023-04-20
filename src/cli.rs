@@ -29,6 +29,10 @@ pub struct Options {
     #[structopt(short, long, parse(from_os_str))]
     pub output: Option<PathBuf>,
 
+    /// No output messages
+    #[structopt(short, long)]
+    pub quiet: bool,
+
     /// File to process (default: stdin)
     #[structopt(parse(from_os_str))]
     pub input: Option<PathBuf>,
