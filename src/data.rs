@@ -18,6 +18,8 @@ pub struct Node {
     pid: Option<usize>,
     #[serde(rename(serialize = "classification", deserialize = "id"))]
     node: String,
+    #[serde(rename(serialize = "classification_origin"))]
+    origin: Option<String>,
     #[serde(rename(serialize = "classification_label"))]
     label: String,
     #[serde(rename(serialize = "classification_parent", deserialize = "parent"))]
@@ -104,6 +106,7 @@ impl Graph {
                     let mut node = self.nodes[*i].to_owned();
                     node.parent_node = Some(nodes[new].node.to_owned());
                     if !node.leaf && *branch != (0 as usize) {
+                        node.origin = Some(node.node.to_owned());
                         node.node = format!("{}{}{}", node.node, SEPARATOR, *branch);
                     }
 
@@ -236,6 +239,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Clothing".to_owned(),
+                origin: None,
                 label: "Clothing".to_owned(),
                 parent_node: None,
                 parent_id: None,
@@ -247,6 +251,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Men's".to_owned(),
+                origin: None,
                 label: "Men's".to_owned(),
                 parent_node: Some("Clothing".to_owned()),
                 parent_id: None,
@@ -258,6 +263,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Women's".to_owned(),
+                origin: None,
                 label: "Women's".to_owned(),
                 parent_node: Some("Clothing".to_owned()),
                 parent_id: None,
@@ -269,6 +275,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Suits".to_owned(),
+                origin: None,
                 label: "Suits".to_owned(),
                 parent_node: Some("Men's".to_owned()),
                 parent_id: None,
@@ -280,6 +287,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Slacks".to_owned(),
+                origin: None,
                 label: "Slacks".to_owned(),
                 parent_node: Some("Suits".to_owned()),
                 parent_id: None,
@@ -291,6 +299,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Jackets".to_owned(),
+                origin: None,
                 label: "Jackets".to_owned(),
                 parent_node: Some("Suits".to_owned()),
                 parent_id: None,
@@ -302,6 +311,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Dresses".to_owned(),
+                origin: None,
                 label: "Dresses".to_owned(),
                 parent_node: Some("Women's".to_owned()),
                 parent_id: None,
@@ -313,6 +323,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Skirts".to_owned(),
+                origin: None,
                 label: "Skirts".to_owned(),
                 parent_node: Some("Women's".to_owned()),
                 parent_id: None,
@@ -324,6 +335,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Blouses".to_owned(),
+                origin: None,
                 label: "Blouses".to_owned(),
                 parent_node: Some("Women's".to_owned()),
                 parent_id: None,
@@ -335,6 +347,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Evening Gowns".to_owned(),
+                origin: None,
                 label: "Evening Gowns".to_owned(),
                 parent_node: Some("Dresses".to_owned()),
                 parent_id: None,
@@ -346,6 +359,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "Sun Dresses".to_owned(),
+                origin: None,
                 label: "Sun Dresses".to_owned(),
                 parent_node: Some("Dresses".to_owned()),
                 parent_id: None,
@@ -427,6 +441,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "0".to_owned(),
+                origin: None,
                 label: "0".to_owned(),
                 parent_node: None,
                 parent_id: None,
@@ -438,6 +453,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "1".to_owned(),
+                origin: None,
                 label: "1".to_owned(),
                 parent_node: Some("0".to_owned()),
                 parent_id: None,
@@ -449,6 +465,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "2".to_owned(),
+                origin: None,
                 label: "2".to_owned(),
                 parent_node: Some("0".to_owned()),
                 parent_id: None,
@@ -460,6 +477,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "3".to_owned(),
+                origin: None,
                 label: "3".to_owned(),
                 parent_node: Some("1".to_owned()),
                 parent_id: None,
@@ -471,6 +489,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "3".to_owned(),
+                origin: None,
                 label: "3".to_owned(),
                 parent_node: Some("2".to_owned()),
                 parent_id: None,
@@ -482,6 +501,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "4".to_owned(),
+                origin: None,
                 label: "4".to_owned(),
                 parent_node: Some("3".to_owned()),
                 parent_id: None,
@@ -493,6 +513,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "5".to_owned(),
+                origin: None,
                 label: "5".to_owned(),
                 parent_node: Some("3".to_owned()),
                 parent_id: None,
@@ -504,6 +525,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "5".to_owned(),
+                origin: None,
                 label: "5".to_owned(),
                 parent_node: Some("2".to_owned()),
                 parent_id: None,
@@ -537,6 +559,7 @@ mod tests {
         assert_eq!(nodes.get(3).unwrap().parent_node, Some("1".to_owned()));
 
         assert_eq!(nodes.get(4).unwrap().node, "3__1".to_owned());
+        assert_eq!(nodes.get(4).unwrap().origin, Some("3".to_owned()));
         assert_eq!(nodes.get(4).unwrap().parent_node, Some("2".to_owned()));
 
         assert_eq!(nodes.get(5).unwrap().node, "5".to_owned());
@@ -561,6 +584,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "1".to_owned(),
+                origin: None,
                 label: "1".to_owned(),
                 parent_node: None,
                 parent_id: None,
@@ -572,6 +596,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "2".to_owned(),
+                origin: None,
                 label: "2".to_owned(),
                 parent_node: Some("1".to_owned()),
                 parent_id: None,
@@ -583,6 +608,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "3".to_owned(),
+                origin: None,
                 label: "3".to_owned(),
                 parent_node: Some("1".to_owned()),
                 parent_id: None,
@@ -594,6 +620,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "4".to_owned(),
+                origin: None,
                 label: "4".to_owned(),
                 parent_node: Some("3".to_owned()),
                 parent_id: None,
@@ -605,6 +632,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "5".to_owned(),
+                origin: None,
                 label: "5".to_owned(),
                 parent_node: Some("3".to_owned()),
                 parent_id: None,
@@ -616,6 +644,7 @@ mod tests {
             Node {
                 pid: None,
                 node: "6".to_owned(),
+                origin: None,
                 label: "6".to_owned(),
                 parent_node: Some("3".to_owned()),
                 parent_id: None,
