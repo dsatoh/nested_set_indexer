@@ -121,8 +121,15 @@ impl Graph {
 
     pub fn complement_leaf(&self) -> error::Result<Self> {
         let mut nodes = VecDeque::new();
+        let mut set = HashSet::new();
 
-        for (i, node) in self.nodes.iter().enumerate() {
+        let mut push_unless_exist = |node: Node| {
+            if set.insert((node.node.to_owned(), node.parent_node.to_owned())) {
+                nodes.push_back(node);
+            }
+        };
+
+        for node in self.nodes.iter() {
             let mut classification = node.to_owned();
             let mut leaf = classification.to_owned();
 
@@ -135,13 +142,8 @@ impl Graph {
             leaf.parent_node = Some(classification.node.to_owned());
             leaf.leaf = true;
 
-            if i == self.root {
-                nodes.push_front(leaf);
-                nodes.push_front(classification);
-            } else {
-                nodes.push_back(classification);
-                nodes.push_back(leaf);
-            }
+            push_unless_exist(classification);
+            push_unless_exist(leaf);
         }
 
         Ok(Graph {
@@ -172,19 +174,19 @@ impl Graph {
 
             match child_map.get(&nodes.get(i).unwrap().node) {
                 Some(children) => {
-                    let mut r = n;
+                    let mut n2 = n;
 
-                    for (i, _child) in children {
-                        r = fill(nodes, child_map, parent_map, *i, r + 1)?;
+                    for (i2, _child) in children {
+                        n2 = fill(nodes, child_map, parent_map, *i2, n2 + 1)?;
                     }
 
                     {
                         let node = nodes.get_mut(i).unwrap();
-                        node.rgt = Some(r + 1);
+                        node.rgt = Some(n2 + 1);
                         node.count = Some(children.len());
                     }
 
-                    Ok(r + 1)
+                    Ok(n2 + 1)
                 }
                 None => {
                     {
@@ -210,6 +212,8 @@ impl Graph {
 
         fill(self.nodes.as_mut(), &child_map, &parent_map, self.root, 1)?;
 
+        self.nodes.sort_by(|a, b| a.pid.cmp(&b.pid));
+
         Ok(self)
     }
 }
@@ -218,29 +222,13 @@ impl Graph {
 mod tests {
     use crate::data::{Graph, Node};
 
-    /// Example from https://en.wikipedia.org/wiki/Nested_set_model
-    ///
-    /// | id | parent_id | Node          | Lft | Rgt |
-    /// |----|-----------|---------------|-----|-----|
-    /// |  1 |           | Clothing      |   1 |  22 |
-    /// |  2 |         1 | Men's         |   2 |   9 |
-    /// |  3 |         1 | Women's       |  10 |  21 |
-    /// |  4 |         2 | Suits         |   3 |   8 |
-    /// |  5 |         4 | Slacks        |   4 |   5 |
-    /// |  6 |         4 | Jackets       |   6 |   7 |
-    /// |  7 |         3 | Dresses       |  11 |  16 |
-    /// |  8 |         3 | Skirts        |  17 |  18 |
-    /// |  9 |         3 | Blouses       |  19 |  20 |
-    /// | 10 |         7 | Evening Gowns |  12 |  13 |
-    /// | 11 |         7 | Sun Dresses   |  14 |  15 |
-    #[test]
-    fn test_build_index() {
-        let data = vec![
+    fn test_data() -> Vec<Node> {
+        vec![
             Node {
                 pid: None,
-                node: "Clothing".to_owned(),
+                node: "1".to_owned(),
                 origin: None,
-                label: "Clothing".to_owned(),
+                label: "1".to_owned(),
                 parent_node: None,
                 parent_id: None,
                 leaf: false,
@@ -250,10 +238,10 @@ mod tests {
             },
             Node {
                 pid: None,
-                node: "Men's".to_owned(),
+                node: "2".to_owned(),
                 origin: None,
-                label: "Men's".to_owned(),
-                parent_node: Some("Clothing".to_owned()),
+                label: "2".to_owned(),
+                parent_node: Some("1".to_owned()),
                 parent_id: None,
                 leaf: false,
                 lft: None,
@@ -262,10 +250,10 @@ mod tests {
             },
             Node {
                 pid: None,
-                node: "Women's".to_owned(),
+                node: "3".to_owned(),
                 origin: None,
-                label: "Women's".to_owned(),
-                parent_node: Some("Clothing".to_owned()),
+                label: "3".to_owned(),
+                parent_node: Some("2".to_owned()),
                 parent_id: None,
                 leaf: false,
                 lft: None,
@@ -274,10 +262,10 @@ mod tests {
             },
             Node {
                 pid: None,
-                node: "Suits".to_owned(),
+                node: "4".to_owned(),
                 origin: None,
-                label: "Suits".to_owned(),
-                parent_node: Some("Men's".to_owned()),
+                label: "4".to_owned(),
+                parent_node: Some("3".to_owned()),
                 parent_id: None,
                 leaf: false,
                 lft: None,
@@ -286,10 +274,10 @@ mod tests {
             },
             Node {
                 pid: None,
-                node: "Slacks".to_owned(),
+                node: "4".to_owned(),
                 origin: None,
-                label: "Slacks".to_owned(),
-                parent_node: Some("Suits".to_owned()),
+                label: "4".to_owned(),
+                parent_node: Some("1".to_owned()),
                 parent_id: None,
                 leaf: false,
                 lft: None,
@@ -298,406 +286,393 @@ mod tests {
             },
             Node {
                 pid: None,
-                node: "Jackets".to_owned(),
+                node: "5".to_owned(),
                 origin: None,
-                label: "Jackets".to_owned(),
-                parent_node: Some("Suits".to_owned()),
+                label: "5".to_owned(),
+                parent_node: Some("3".to_owned()),
                 parent_id: None,
-                leaf: false,
+                leaf: true,
                 lft: None,
                 rgt: None,
                 count: None,
             },
             Node {
                 pid: None,
-                node: "Dresses".to_owned(),
+                node: "5".to_owned(),
                 origin: None,
-                label: "Dresses".to_owned(),
-                parent_node: Some("Women's".to_owned()),
+                label: "5".to_owned(),
+                parent_node: Some("4".to_owned()),
                 parent_id: None,
-                leaf: false,
+                leaf: true,
                 lft: None,
                 rgt: None,
                 count: None,
             },
-            Node {
-                pid: None,
-                node: "Skirts".to_owned(),
-                origin: None,
-                label: "Skirts".to_owned(),
-                parent_node: Some("Women's".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "Blouses".to_owned(),
-                origin: None,
-                label: "Blouses".to_owned(),
-                parent_node: Some("Women's".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "Evening Gowns".to_owned(),
-                origin: None,
-                label: "Evening Gowns".to_owned(),
-                parent_node: Some("Dresses".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "Sun Dresses".to_owned(),
-                origin: None,
-                label: "Sun Dresses".to_owned(),
-                parent_node: Some("Dresses".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-        ];
+        ]
+    }
 
-        let mut graph = Graph::new(data).unwrap();
+    #[test]
+    fn test_dag() {
+        let graph = Graph::new(test_data()).unwrap();
+        assert_eq!(graph.is_dag(), true);
+        assert_eq!(graph.nodes.len(), 7);
 
+        let mut graph = graph.dag_to_tree().unwrap();
         assert_eq!(graph.is_dag(), false);
+        assert_eq!(graph.nodes.len(), 8);
 
         let graph = graph.build_index().unwrap();
         let nodes = &graph.nodes;
+        {
+            let node = nodes.get(0).unwrap();
+            assert_eq!(node.pid, Some(1));
+            assert_eq!(node.node, "1".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "1".to_owned());
+            assert_eq!(node.parent_node, None);
+            assert_eq!(node.parent_id, None);
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(1));
+            assert_eq!(node.rgt, Some(16));
+            assert_eq!(node.count, Some(2));
+        }
 
-        assert_eq!(nodes.len(), 11);
+        {
+            let node = nodes.get(1).unwrap();
+            assert_eq!(node.pid, Some(2));
+            assert_eq!(node.node, "2".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "2".to_owned());
+            assert_eq!(node.parent_node, Some("1".to_owned()));
+            assert_eq!(node.parent_id, Some(1));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(2));
+            assert_eq!(node.rgt, Some(11));
+            assert_eq!(node.count, Some(1));
+        }
 
-        assert_eq!(nodes.get(0).unwrap().pid, Some(1));
-        assert_eq!(nodes.get(0).unwrap().parent_id, None);
-        assert_eq!(nodes.get(0).unwrap().lft, Some(1));
-        assert_eq!(nodes.get(0).unwrap().rgt, Some(22));
+        {
+            let node = nodes.get(2).unwrap();
+            assert_eq!(node.pid, Some(3));
+            assert_eq!(node.node, "4".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("1".to_owned()));
+            assert_eq!(node.parent_id, Some(1));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(12));
+            assert_eq!(node.rgt, Some(15));
+            assert_eq!(node.count, Some(1));
+        }
 
-        assert_eq!(nodes.get(1).unwrap().pid, Some(2));
-        assert_eq!(nodes.get(1).unwrap().parent_id, Some(1));
-        assert_eq!(nodes.get(1).unwrap().lft, Some(2));
-        assert_eq!(nodes.get(1).unwrap().rgt, Some(9));
+        {
+            let node = nodes.get(3).unwrap();
+            assert_eq!(node.pid, Some(4));
+            assert_eq!(node.node, "3".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "3".to_owned());
+            assert_eq!(node.parent_node, Some("2".to_owned()));
+            assert_eq!(node.parent_id, Some(2));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(3));
+            assert_eq!(node.rgt, Some(10));
+            assert_eq!(node.count, Some(2));
+        }
 
-        assert_eq!(nodes.get(2).unwrap().pid, Some(3));
-        assert_eq!(nodes.get(2).unwrap().parent_id, Some(1));
-        assert_eq!(nodes.get(2).unwrap().lft, Some(10));
-        assert_eq!(nodes.get(2).unwrap().rgt, Some(21));
+        {
+            let node = nodes.get(4).unwrap();
+            assert_eq!(node.pid, Some(5));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("4".to_owned()));
+            assert_eq!(node.parent_id, Some(3));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(13));
+            assert_eq!(node.rgt, Some(14));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(3).unwrap().pid, Some(4));
-        assert_eq!(nodes.get(3).unwrap().parent_id, Some(2));
-        assert_eq!(nodes.get(3).unwrap().lft, Some(3));
-        assert_eq!(nodes.get(3).unwrap().rgt, Some(8));
+        {
+            let node = nodes.get(5).unwrap();
+            assert_eq!(node.pid, Some(6));
+            assert_eq!(node.node, "4__1".to_owned());
+            assert_eq!(node.origin, Some("4".to_owned()));
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("3".to_owned()));
+            assert_eq!(node.parent_id, Some(4));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(4));
+            assert_eq!(node.rgt, Some(7));
+            assert_eq!(node.count, Some(1));
+        }
 
-        assert_eq!(nodes.get(4).unwrap().pid, Some(5));
-        assert_eq!(nodes.get(4).unwrap().parent_id, Some(4));
-        assert_eq!(nodes.get(4).unwrap().lft, Some(4));
-        assert_eq!(nodes.get(4).unwrap().rgt, Some(5));
+        {
+            let node = nodes.get(6).unwrap();
+            assert_eq!(node.pid, Some(7));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("3".to_owned()));
+            assert_eq!(node.parent_id, Some(4));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(8));
+            assert_eq!(node.rgt, Some(9));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(5).unwrap().pid, Some(6));
-        assert_eq!(nodes.get(5).unwrap().parent_id, Some(4));
-        assert_eq!(nodes.get(5).unwrap().lft, Some(6));
-        assert_eq!(nodes.get(5).unwrap().rgt, Some(7));
-
-        assert_eq!(nodes.get(6).unwrap().pid, Some(7));
-        assert_eq!(nodes.get(6).unwrap().parent_id, Some(3));
-        assert_eq!(nodes.get(6).unwrap().lft, Some(11));
-        assert_eq!(nodes.get(6).unwrap().rgt, Some(16));
-
-        assert_eq!(nodes.get(7).unwrap().pid, Some(8));
-        assert_eq!(nodes.get(7).unwrap().parent_id, Some(3));
-        assert_eq!(nodes.get(7).unwrap().lft, Some(17));
-        assert_eq!(nodes.get(7).unwrap().rgt, Some(18));
-
-        assert_eq!(nodes.get(8).unwrap().pid, Some(9));
-        assert_eq!(nodes.get(8).unwrap().parent_id, Some(3));
-        assert_eq!(nodes.get(8).unwrap().lft, Some(19));
-        assert_eq!(nodes.get(8).unwrap().rgt, Some(20));
-
-        assert_eq!(nodes.get(9).unwrap().pid, Some(10));
-        assert_eq!(nodes.get(9).unwrap().parent_id, Some(7));
-        assert_eq!(nodes.get(9).unwrap().lft, Some(12));
-        assert_eq!(nodes.get(9).unwrap().rgt, Some(13));
-
-        assert_eq!(nodes.get(10).unwrap().pid, Some(11));
-        assert_eq!(nodes.get(10).unwrap().parent_id, Some(7));
-        assert_eq!(nodes.get(10).unwrap().lft, Some(14));
-        assert_eq!(nodes.get(10).unwrap().rgt, Some(15));
+        {
+            let node = nodes.get(7).unwrap();
+            assert_eq!(node.pid, Some(8));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("4__1".to_owned()));
+            assert_eq!(node.parent_id, Some(6));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(5));
+            assert_eq!(node.rgt, Some(6));
+            assert_eq!(node.count, Some(0));
+        }
     }
 
     #[test]
-    fn test_dag_to_tree() {
-        let data = vec![
-            Node {
-                pid: None,
-                node: "0".to_owned(),
-                origin: None,
-                label: "0".to_owned(),
-                parent_node: None,
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "1".to_owned(),
-                origin: None,
-                label: "1".to_owned(),
-                parent_node: Some("0".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "2".to_owned(),
-                origin: None,
-                label: "2".to_owned(),
-                parent_node: Some("0".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "3".to_owned(),
-                origin: None,
-                label: "3".to_owned(),
-                parent_node: Some("1".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "3".to_owned(),
-                origin: None,
-                label: "3".to_owned(),
-                parent_node: Some("2".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "4".to_owned(),
-                origin: None,
-                label: "4".to_owned(),
-                parent_node: Some("3".to_owned()),
-                parent_id: None,
-                leaf: true,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "5".to_owned(),
-                origin: None,
-                label: "5".to_owned(),
-                parent_node: Some("3".to_owned()),
-                parent_id: None,
-                leaf: true,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "5".to_owned(),
-                origin: None,
-                label: "5".to_owned(),
-                parent_node: Some("2".to_owned()),
-                parent_id: None,
-                leaf: true,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-        ];
-
-        let graph = Graph::new(data).unwrap();
-
-        assert_eq!(graph.is_dag(), true);
-
-        let tree = graph.dag_to_tree().unwrap();
-        let nodes = &tree.nodes;
-
-        assert_eq!(tree.is_dag(), false);
-        assert_eq!(nodes.len(), 10);
-
-        assert_eq!(nodes.get(0).unwrap().node, "0".to_owned());
-        assert_eq!(nodes.get(0).unwrap().parent_node, None);
-
-        assert_eq!(nodes.get(1).unwrap().node, "1".to_owned());
-        assert_eq!(nodes.get(1).unwrap().parent_node, Some("0".to_owned()));
-
-        assert_eq!(nodes.get(2).unwrap().node, "2".to_owned());
-        assert_eq!(nodes.get(2).unwrap().parent_node, Some("0".to_owned()));
-
-        assert_eq!(nodes.get(3).unwrap().node, "3".to_owned());
-        assert_eq!(nodes.get(3).unwrap().parent_node, Some("1".to_owned()));
-
-        assert_eq!(nodes.get(4).unwrap().node, "3__1".to_owned());
-        assert_eq!(nodes.get(4).unwrap().origin, Some("3".to_owned()));
-        assert_eq!(nodes.get(4).unwrap().parent_node, Some("2".to_owned()));
-
-        assert_eq!(nodes.get(5).unwrap().node, "5".to_owned());
-        assert_eq!(nodes.get(5).unwrap().parent_node, Some("2".to_owned()));
-
-        assert_eq!(nodes.get(6).unwrap().node, "4".to_owned());
-        assert_eq!(nodes.get(6).unwrap().parent_node, Some("3".to_owned()));
-
-        assert_eq!(nodes.get(7).unwrap().node, "5".to_owned());
-        assert_eq!(nodes.get(7).unwrap().parent_node, Some("3".to_owned()));
-
-        assert_eq!(nodes.get(8).unwrap().node, "4".to_owned());
-        assert_eq!(nodes.get(8).unwrap().parent_node, Some("3__1".to_owned()));
-
-        assert_eq!(nodes.get(9).unwrap().node, "5".to_owned());
-        assert_eq!(nodes.get(9).unwrap().parent_node, Some("3__1".to_owned()));
-    }
-
-    #[test]
-    fn test_complement_leaf() {
-        let data = vec![
-            Node {
-                pid: None,
-                node: "1".to_owned(),
-                origin: None,
-                label: "1".to_owned(),
-                parent_node: None,
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "2".to_owned(),
-                origin: None,
-                label: "2".to_owned(),
-                parent_node: Some("1".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "3".to_owned(),
-                origin: None,
-                label: "3".to_owned(),
-                parent_node: Some("1".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "4".to_owned(),
-                origin: None,
-                label: "4".to_owned(),
-                parent_node: Some("3".to_owned()),
-                parent_id: None,
-                leaf: false,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "5".to_owned(),
-                origin: None,
-                label: "5".to_owned(),
-                parent_node: Some("3".to_owned()),
-                parent_id: None,
-                leaf: true,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-            Node {
-                pid: None,
-                node: "6".to_owned(),
-                origin: None,
-                label: "6".to_owned(),
-                parent_node: Some("3".to_owned()),
-                parent_id: None,
-                leaf: true,
-                lft: None,
-                rgt: None,
-                count: None,
-            },
-        ];
-
-        let graph = Graph::new(data).unwrap();
-
-        assert_eq!(graph.is_dag(), false);
+    fn test_dag_complement_leaf() {
+        let graph = Graph::new(test_data()).unwrap();
+        assert_eq!(graph.nodes.len(), 7);
 
         let graph = graph.complement_leaf().unwrap();
+        assert_eq!(graph.is_dag(), true);
+        assert_eq!(graph.nodes.len(), 12);
+
+        let mut graph = graph.dag_to_tree().unwrap();
+        assert_eq!(graph.is_dag(), false);
+        assert_eq!(graph.nodes.len(), 16);
+
+        let graph = graph.build_index().unwrap();
         let nodes = &graph.nodes;
+        {
+            let node = nodes.get(0).unwrap();
+            assert_eq!(node.pid, Some(1));
+            assert_eq!(node.node, "c__1".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "1".to_owned());
+            assert_eq!(node.parent_node, None);
+            assert_eq!(node.parent_id, None);
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(1));
+            assert_eq!(node.rgt, Some(32));
+            assert_eq!(node.count, Some(3));
+        }
 
-        assert_eq!(nodes.len(), 12);
+        {
+            let node = nodes.get(1).unwrap();
+            assert_eq!(node.pid, Some(2));
+            assert_eq!(node.node, "1".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "1".to_owned());
+            assert_eq!(node.parent_node, Some("c__1".to_owned()));
+            assert_eq!(node.parent_id, Some(1));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(2));
+            assert_eq!(node.rgt, Some(3));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(0).unwrap().node, "c__1".to_owned());
-        assert_eq!(nodes.get(0).unwrap().parent_node, None);
+        {
+            let node = nodes.get(2).unwrap();
+            assert_eq!(node.pid, Some(3));
+            assert_eq!(node.node, "c__2".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "2".to_owned());
+            assert_eq!(node.parent_node, Some("c__1".to_owned()));
+            assert_eq!(node.parent_id, Some(1));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(4));
+            assert_eq!(node.rgt, Some(23));
+            assert_eq!(node.count, Some(2));
+        }
 
-        assert_eq!(nodes.get(1).unwrap().node, "1".to_owned());
-        assert_eq!(nodes.get(1).unwrap().parent_node, Some("c__1".to_owned()));
+        {
+            let node = nodes.get(3).unwrap();
+            assert_eq!(node.pid, Some(4));
+            assert_eq!(node.node, "c__4".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("c__1".to_owned()));
+            assert_eq!(node.parent_id, Some(1));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(24));
+            assert_eq!(node.rgt, Some(31));
+            assert_eq!(node.count, Some(2));
+        }
 
-        assert_eq!(nodes.get(2).unwrap().node, "c__2".to_owned());
-        assert_eq!(nodes.get(2).unwrap().parent_node, Some("c__1".to_owned()));
+        {
+            let node = nodes.get(4).unwrap();
+            assert_eq!(node.pid, Some(5));
+            assert_eq!(node.node, "2".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "2".to_owned());
+            assert_eq!(node.parent_node, Some("c__2".to_owned()));
+            assert_eq!(node.parent_id, Some(3));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(5));
+            assert_eq!(node.rgt, Some(6));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(3).unwrap().node, "2".to_owned());
-        assert_eq!(nodes.get(3).unwrap().parent_node, Some("c__2".to_owned()));
+        {
+            let node = nodes.get(5).unwrap();
+            assert_eq!(node.pid, Some(6));
+            assert_eq!(node.node, "c__3".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "3".to_owned());
+            assert_eq!(node.parent_node, Some("c__2".to_owned()));
+            assert_eq!(node.parent_id, Some(3));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(7));
+            assert_eq!(node.rgt, Some(22));
+            assert_eq!(node.count, Some(3));
+        }
 
-        assert_eq!(nodes.get(4).unwrap().node, "c__3".to_owned());
-        assert_eq!(nodes.get(4).unwrap().parent_node, Some("c__1".to_owned()));
+        {
+            let node = nodes.get(6).unwrap();
+            assert_eq!(node.pid, Some(7));
+            assert_eq!(node.node, "4".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("c__4".to_owned()));
+            assert_eq!(node.parent_id, Some(4));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(25));
+            assert_eq!(node.rgt, Some(26));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(5).unwrap().node, "3".to_owned());
-        assert_eq!(nodes.get(5).unwrap().parent_node, Some("c__3".to_owned()));
+        {
+            let node = nodes.get(7).unwrap();
+            assert_eq!(node.pid, Some(8));
+            assert_eq!(node.node, "c__5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__4".to_owned()));
+            assert_eq!(node.parent_id, Some(4));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(27));
+            assert_eq!(node.rgt, Some(30));
+            assert_eq!(node.count, Some(1));
+        }
 
-        assert_eq!(nodes.get(6).unwrap().node, "c__4".to_owned());
-        assert_eq!(nodes.get(6).unwrap().parent_node, Some("c__3".to_owned()));
+        {
+            let node = nodes.get(8).unwrap();
+            assert_eq!(node.pid, Some(9));
+            assert_eq!(node.node, "3".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "3".to_owned());
+            assert_eq!(node.parent_node, Some("c__3".to_owned()));
+            assert_eq!(node.parent_id, Some(6));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(8));
+            assert_eq!(node.rgt, Some(9));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(7).unwrap().node, "4".to_owned());
-        assert_eq!(nodes.get(7).unwrap().parent_node, Some("c__4".to_owned()));
+        {
+            let node = nodes.get(9).unwrap();
+            assert_eq!(node.pid, Some(10));
+            assert_eq!(node.node, "c__4__1".to_owned());
+            assert_eq!(node.origin, Some("c__4".to_owned()));
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("c__3".to_owned()));
+            assert_eq!(node.parent_id, Some(6));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(10));
+            assert_eq!(node.rgt, Some(17));
+            assert_eq!(node.count, Some(2));
+        }
 
-        assert_eq!(nodes.get(8).unwrap().node, "c__5".to_owned());
-        assert_eq!(nodes.get(8).unwrap().parent_node, Some("c__3".to_owned()));
+        {
+            let node = nodes.get(10).unwrap();
+            assert_eq!(node.pid, Some(11));
+            assert_eq!(node.node, "c__5__1".to_owned());
+            assert_eq!(node.origin, Some("c__5".to_owned()));
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__3".to_owned()));
+            assert_eq!(node.parent_id, Some(6));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(18));
+            assert_eq!(node.rgt, Some(21));
+            assert_eq!(node.count, Some(1));
+        }
 
-        assert_eq!(nodes.get(9).unwrap().node, "5".to_owned());
-        assert_eq!(nodes.get(9).unwrap().parent_node, Some("c__5".to_owned()));
+        {
+            let node = nodes.get(11).unwrap();
+            assert_eq!(node.pid, Some(12));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__5".to_owned()));
+            assert_eq!(node.parent_id, Some(8));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(28));
+            assert_eq!(node.rgt, Some(29));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(10).unwrap().node, "c__6".to_owned());
-        assert_eq!(nodes.get(10).unwrap().parent_node, Some("c__3".to_owned()));
+        {
+            let node = nodes.get(12).unwrap();
+            assert_eq!(node.pid, Some(13));
+            assert_eq!(node.node, "4".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "4".to_owned());
+            assert_eq!(node.parent_node, Some("c__4__1".to_owned()));
+            assert_eq!(node.parent_id, Some(10));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(11));
+            assert_eq!(node.rgt, Some(12));
+            assert_eq!(node.count, Some(0));
+        }
 
-        assert_eq!(nodes.get(11).unwrap().node, "6".to_owned());
-        assert_eq!(nodes.get(11).unwrap().parent_node, Some("c__6".to_owned()));
+        {
+            let node = nodes.get(13).unwrap();
+            assert_eq!(node.pid, Some(14));
+            assert_eq!(node.node, "c__5__2".to_owned());
+            assert_eq!(node.origin, Some("c__5".to_owned()));
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__4__1".to_owned()));
+            assert_eq!(node.parent_id, Some(10));
+            assert_eq!(node.leaf, false);
+            assert_eq!(node.lft, Some(13));
+            assert_eq!(node.rgt, Some(16));
+            assert_eq!(node.count, Some(1));
+        }
+
+        {
+            let node = nodes.get(14).unwrap();
+            assert_eq!(node.pid, Some(15));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__5__1".to_owned()));
+            assert_eq!(node.parent_id, Some(11));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(19));
+            assert_eq!(node.rgt, Some(20));
+            assert_eq!(node.count, Some(0));
+        }
+
+        {
+            let node = nodes.get(15).unwrap();
+            assert_eq!(node.pid, Some(16));
+            assert_eq!(node.node, "5".to_owned());
+            assert_eq!(node.origin, None);
+            assert_eq!(node.label, "5".to_owned());
+            assert_eq!(node.parent_node, Some("c__5__2".to_owned()));
+            assert_eq!(node.parent_id, Some(14));
+            assert_eq!(node.leaf, true);
+            assert_eq!(node.lft, Some(14));
+            assert_eq!(node.rgt, Some(15));
+            assert_eq!(node.count, Some(0));
+        }
     }
 }

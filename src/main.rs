@@ -53,17 +53,17 @@ fn main() -> error::Result<()> {
     };
 
     let mut graph = Graph::new(data)?;
-    if graph.is_dag() {
-        if !options.quiet {
-            eprintln!("converting directed acyclic graph to tree...");
-        }
-        graph = graph.dag_to_tree()?;
-    }
     if options.complement_leaf {
         if !options.quiet {
             eprintln!("complementing leaf nodes...");
         }
         graph = graph.complement_leaf()?;
+    }
+    if graph.is_dag() {
+        if !options.quiet {
+            eprintln!("converting directed acyclic graph to tree...");
+        }
+        graph = graph.dag_to_tree()?;
     }
 
     let graph = graph.build_index()?;
